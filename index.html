@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apuração · 2º turno 2026 · Presidente</title>
+<style>
+:root{--bg:#f5f5f2;--ink:#16181d;--mut:#5d636e;--line:#d9dbd6;--a:#c4161c;--b:#1b4fa0;--ok:#1d7a46;--warn:#9a5b00}
+@media (prefers-color-scheme:dark){:root{--bg:#14161a;--ink:#eef0f3;--mut:#9aa1ad;--line:#2b2f37;--a:#ff5a5f;--b:#6c9bff;--ok:#4cc38a;--warn:#f0b24a}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.45 "Helvetica Neue",Arial,sans-serif;padding:max(20px,env(safe-area-inset-top)) 20px max(20px,env(safe-area-inset-bottom))}
+main{max-width:980px;margin:0 auto}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;border-bottom:2px solid var(--ink);padding-bottom:10px}
+h1{font:700 22px/1.2 Georgia,"Times New Roman",serif;margin:0}
+#status{font-weight:600;font-size:15px}
+#status.ok{color:var(--ok)}#status.wait{color:var(--warn)}
+.score{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:28px 0 18px}
+.c h2{margin:0;font-size:15px;font-weight:600;color:var(--mut)}
+.c .pct{font:700 clamp(52px,12vw,110px)/1 Georgia,"Times New Roman",serif;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.c .v{font-variant-numeric:tabular-nums;font-size:18px}
+.c.a .pct{color:var(--a)}.c.b{text-align:right}.c.b .pct{color:var(--b)}
+.c.lead h2::after{content:" · na frente";color:var(--ink)}
+.bar{position:relative;height:30px;display:flex;background:var(--line)}
+.bar i{display:block;height:100%;transition:width .8s ease}
+#ba{background:var(--a)}#bb{background:var(--b)}
+.bar::after{content:"";position:absolute;left:50%;top:-8px;bottom:-8px;width:2px;background:var(--ink)}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0;margin-top:26px;border-top:1px solid var(--line)}
+.facts div{padding:14px 0;border-bottom:1px solid var(--line)}
+.facts dt{color:var(--mut);font-size:13px}.facts dd{margin:2px 0 0;font:600 20px Georgia,serif;font-variant-numeric:tabular-nums}
+#msg{margin-top:16px;color:var(--warn);font-size:14px;min-height:20px}
+footer{margin-top:22px;color:var(--mut);font-size:12.5px}
+a{color:inherit}
+@media (max-width:560px){.score{gap:12px}.c .v{font-size:14px}}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Apuração do 2º turno · Presidente 2026</h1>
+  <div id="status" class="wait">Conectando ao TSE…</div>
+</header>
+
+<section class="score" aria-live="polite">
+  <div class="c a" id="ca"><h2 id="na">Lula (PT)</h2><div class="pct" id="pa">–</div><div class="v" id="va">–</div></div>
+  <div class="c b" id="cb"><h2 id="nb">Flávio Bolsonaro (PL)</h2><div class="pct" id="pb">–</div><div class="v" id="vb">–</div></div>
+</section>
+
+<div class="bar" role="img" aria-label="Proporção de votos válidos"><i id="ba" style="width:50%"></i><i id="bb" style="width:50%"></i></div>
+
+<dl class="facts">
+  <div><dt>Seções totalizadas</dt><dd id="sec">–</dd></div>
+  <div><dt>Diferença de votos</dt><dd id="dif">–</dd></div>
+  <div><dt>Votos válidos computados</dt><dd id="tot">–</dd></div>
+  <div><dt>Última geração do TSE</dt><dd id="hg">–</dd></div>
+</dl>
+
+<div id="msg"></div>
+<footer>
+  Percentuais calculados sobre os votos dos dois candidatos. Fonte: arquivo JSON oficial do TSE (eleição 6258), atualizado a cada <span id="iv">30</span> s. Próxima consulta em <span id="cd">–</span> s.
+</footer>
+</main>
+
+<script>
+const URL_TSE = "/api/resultado"; // proxy na Vercel (api/resultado.js)
+const INTERVALO = 30; // segundos
+const $ = id => document.getElementById(id);
+const fmt = n => Number(n).toLocaleString("pt-BR");
+const pc = n => n.toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + "%";
+let restante = INTERVALO;
+
+function candidatos(j) {
+  const out = [];
+  for (const agr of (j.carg?.[0]?.agr || []))
+    for (const par of (agr.par || []))
+      for (const c of (par.cand || [])) out.push({ nome: c.nmu, num: c.n, partido: par.sg, votos: Number(c.vap) || 0, eleito: c.e === "s" && c.st === "Eleito" });
+  return out;
+}
+
+function render(j) {
+  const cs = candidatos(j);
+  const lula = cs.find(c => c.num === "13") || cs[0];
+  const flavio = cs.find(c => c.num === "22") || cs[1];
+  if (!lula || !flavio) throw new Error("Candidatos não encontrados no arquivo.");
+
+  const soma = lula.votos + flavio.votos;
+  const pa = soma ? lula.votos / soma * 100 : 0, pb = soma ? flavio.votos / soma * 100 : 0;
+
+  $("na").textContent = `${lula.nome} (${lula.partido})`;
+  $("nb").textContent = `${flavio.nome} (${flavio.partido})`;
+  $("pa").textContent = soma ? pc(pa) : "–";
+  $("pb").textContent = soma ? pc(pb) : "–";
+  $("va").textContent = soma ? fmt(lula.votos) + " votos" : "0 votos";
+  $("vb").textContent = soma ? fmt(flavio.votos) + " votos" : "0 votos";
+  $("ba").style.width = (soma ? pa : 50) + "%";
+  $("bb").style.width = (soma ? pb : 50) + "%";
+  $("ca").classList.toggle("lead", soma > 0 && lula.votos > flavio.votos);
+  $("cb").classList.toggle("lead", soma > 0 && flavio.votos > lula.votos);
+
+  const s = j.s || {}, ts = Number(s.ts) || 0, st = Number(s.st) || 0;
+  $("sec").textContent = ts ? `${fmt(st)} de ${fmt(ts)} (${pc(st / ts * 100)})` : "–";
+  $("dif").textContent = soma ? fmt(Math.abs(lula.votos - flavio.votos)) : "–";
+  $("tot").textContent = fmt(soma);
+  $("hg").textContent = j.hg ? `${j.hg} · ${j.dg}` : "–";
+
+  const el = $("status");
+  if (j.dv === "n") { el.textContent = "TSE ainda não liberou a divulgação dos votos"; el.className = "wait"; }
+  else if (j.tf === "s" || j.md === "e") {
+    const venc = lula.votos > flavio.votos ? lula : flavio;
+    el.textContent = `TSE: eleição definida · ${venc.nome}`; el.className = "ok";
+  }
+  else if (j.and === "n" || soma === 0) { el.textContent = "Aguardando início da apuração"; el.className = "wait"; }
+  else { el.textContent = "Apuração em andamento"; el.className = "ok"; }
+}
+
+async function atualizar() {
+  try {
+    const r = await fetch(URL_TSE, { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    render(await r.json());
+    $("msg").textContent = "";
+  } catch (e) {
+    $("msg").textContent = "Não consegui ler o TSE agora (" + e.message + "). Mantendo o último resultado exibido e tentando de novo.";
+  }
+  restante = INTERVALO;
+}
+
+$("iv").textContent = INTERVALO;
+atualizar();
+setInterval(() => { restante--; $("cd").textContent = Math.max(restante, 0); if (restante <= 0) atualizar(); }, 1000);
+</script>
+</body>
+</html>
